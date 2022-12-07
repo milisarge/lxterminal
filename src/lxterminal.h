@@ -86,6 +86,7 @@ typedef struct _command_arguments {
     int geometry_yoff;
     char * title;               /* Value of -t, -T, --title; points into argument vector */
     char * tabs;                /* Value of --tab; points into argument vector */
+    char * paths;                /* Value of --path; points into argument vector */
     char * working_directory;           /* Value of --working-directory; points into argument vector */
     gboolean login_shell;           /* Terminal will spawn login shells */
     gboolean no_remote;

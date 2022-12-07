@@ -97,7 +97,7 @@ static gboolean terminal_vte_button_press_event(VteTerminal * vte, GdkEventButto
 static void terminal_settings_apply_to_term(LXTerminal * terminal, Term * term);
 static Term * terminal_new(LXTerminal * terminal, const gchar * label, const gchar * pwd, gchar * * env, gchar * * exec);
 static void terminal_set_geometry_hints(Term * term, GdkGeometry * geometry);
-static void terminal_new_tab(LXTerminal * terminal, const gchar * label);
+static void terminal_new_tab(LXTerminal * terminal, const gchar * label, const gchar * path);
 static void terminal_free(Term * term);
 static void terminal_menubar_initialize(LXTerminal * terminal);
 static void terminal_menu_accelerator_update(LXTerminal * terminal);
@@ -118,6 +118,7 @@ static gchar usage_display[] = {
     "  -l, --loginshell                 Execute login shell\n"
     "  -t, -T, --title=,\n"
     "    --tabs=NAME[,NAME[,NAME[...]]] Set the terminal's title\n"
+	"  --paths=PATH[,PATH[,PATH[...]]]  Set the terminal's paths of new tabs\n"
     "  --working-directory=DIRECTORY    Set the terminal's working directory\n"
     "  --no-remote                      Do not accept or send remote commands\n"
     "  -v, --version                    Version information\n"
@@ -373,7 +374,7 @@ static void terminal_new_window_activate_event(GtkAction * action, LXTerminal * 
  * Open a new tab. */
 static void terminal_new_tab_activate_event(GtkAction * action, LXTerminal * terminal)
 {
-    terminal_new_tab(terminal, NULL);
+    terminal_new_tab(terminal, NULL, NULL);
 }
 
 static void terminal_set_geometry_hints(Term *term, GdkGeometry *geometry)
@@ -410,11 +411,17 @@ static void terminal_save_size(LXTerminal * terminal)
     terminal->row = vte_terminal_get_row_count(VTE_TERMINAL(term->vte));
 }
 
-static void terminal_new_tab(LXTerminal * terminal, const gchar * label)
+static void terminal_new_tab(LXTerminal * terminal, const gchar * label, const gchar * path)
 {
     Term * term;
-    gchar * proc_cwd = terminal_get_current_dir(terminal);
-
+    //gchar * proc_cwd = terminal_get_current_dir(terminal);
+    gchar proc_cwd [512] = {0};
+    if (path == NULL){
+      strcpy(proc_cwd, terminal_get_current_dir(terminal));
+    }
+    else {
+      strcpy(proc_cwd, path);
+    }
     /* Propagate the working directory of the current tab to the new tab.
      * If the working directory was determined above, use it; otherwise default to the working directory of the process.
      * Create the new terminal. */
@@ -434,7 +441,7 @@ static void terminal_new_tab(LXTerminal * terminal, const gchar * label)
     {
         term = terminal_new(terminal, label, proc_cwd, NULL, NULL);
     }
-    g_free(proc_cwd);
+    //g_free(proc_cwd);
 
     /* Add a tab to the notebook and the "terms" array. */
     gtk_notebook_append_page(GTK_NOTEBOOK(terminal->notebook), term->box, term->tab);
@@ -1522,6 +1529,12 @@ gboolean lxterminal_process_arguments(gint argc, gchar * * argv, CommandArgument
         {
             arguments->tabs = &argument[7];
         }
+        
+         /* --paths=<paths> */
+        else if (strncmp(argument, "--paths=", 8) == 0)
+        {
+            arguments->paths = &argument[8];
+        }
 
         /* -t <title>, -T <title>, --title <title>
          * The -T form is demanded by distros who insist on this xterm feature. */
@@ -1683,10 +1696,18 @@ LXTerminal * lxterminal_initialize(LXTermWindow * lxtermwin, CommandArguments * 
         G_CALLBACK(terminal_close_window_confirmation_event), terminal);
 
     /* Create the first terminal. */
-    gchar * local_working_directory = NULL;
+    //gchar * local_working_directory = NULL;
+    gchar local_working_directory [512] = {0};
     if (arguments->working_directory == NULL)
     {
-        local_working_directory = g_get_current_dir();
+        //local_working_directory = g_get_current_dir();
+        if (arguments->paths != NULL && arguments->paths[0] != '\0') {
+		  char temp_paths[512] = {0};
+		  strcpy(temp_paths, arguments->paths);
+		  strcpy(local_working_directory, strtok(temp_paths, ","));
+		} else {
+		  strcpy(local_working_directory, g_get_current_dir());
+		}
     }
     Term * term = terminal_new(
         terminal,
@@ -1694,7 +1715,7 @@ LXTerminal * lxterminal_initialize(LXTermWindow * lxtermwin, CommandArguments * 
         ((arguments->working_directory != NULL) ? arguments->working_directory : local_working_directory),
         NULL,
         arguments->command);
-    g_free(local_working_directory);
+    //g_free(local_working_directory);
 
     /* Set window title. */
     gtk_window_set_title(GTK_WINDOW(terminal->window), gtk_label_get_text(GTK_LABEL(term->label)));
@@ -1789,7 +1810,22 @@ LXTerminal * lxterminal_initialize(LXTermWindow * lxtermwin, CommandArguments * 
 
         while (token != NULL && token[0] != '\0')
         {
-            terminal_new_tab(terminal, token);
+            terminal_new_tab(terminal, token, NULL);
+            token = strtok(NULL, ",");
+        }
+    }
+    
+    if (arguments->paths != NULL && arguments->paths[0] != '\0')
+    {
+        /* use token to destructively slice paths to different tab names */
+        char * token = strtok(arguments->paths, ",");
+        term->user_specified_label = TRUE;
+        gtk_label_set_text(GTK_LABEL(term->label), token);
+        token = strtok(NULL, ",");
+
+        while (token != NULL && token[0] != '\0')
+        {
+            terminal_new_tab(terminal, token, token);
             token = strtok(NULL, ",");
         }
     }
